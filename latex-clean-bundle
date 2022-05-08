@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# Makes a clean version of the latex project whose main file is $1, in the same directory.
+# Zips it up and updates it to the web using webify.
+# 
+# Remaining arguments after $1 are passed to latex-clean on each of the .tex files.
+# 
+# Example usage:
+#     latex-clean-bundle main.tex fixme note notewho cutforspace mycomment jason coauthor1 coauthor2
+
+# TODO: After identifying the tex files, it would be nice to scan them and warn
+#       about any additional macros that look like they should have been included
+#       as arguments.
+
+ROOT=$1; shift
+if [ ! -r $ROOT ]; then echo "Can't read $ROOT"; exit 1; fi
+BASE=$(basename "$ROOT" .tex)
+DIR=$(dirname $ROOT)
+cd $DIR
+
+# Make a copy of DIR as the DIRCLEAN subdirectory.
+# That's where we'll build the clean version.
+
+DIRCLEAN=$(basename $(pwd))-clean
+rm -rf $DIRCLEAN $DIRCLEAN.zip /tmp/$DIRCLEAN.$$
+cp -pr . /tmp/$DIRCLEAN.$$   # can't copy a directory into itself, so put it in /tmp first
+mv /tmp/$DIRCLEAN.$$ $DIRCLEAN
+
+# Run latex on the root file, producing files for bundledoc and aux2bib.
+# First have to modify root file to use snapshot package, which creates the .dep file for bundledoc.
+# Remark: The info in the $BASE.dep snapshot may also be in $BASE.fdb_latexmk. 
+
+cd $DIRCLEAN
+echo "Working in directory $DIRCLEAN (fresh copy)"
+perl -i -0777 -pe 's/\\documentclass/\\RequirePackage{snapshot}\n$&/' $BASE.tex
+echo "Running latex on project from scratch, for safety ..."
+latexmk -gg -pdf $BASE.tex
+echo
+echo "Finding relevant files (may take a minute) ..."
+readarray -t FILES < <(bundledoc --localonly --listdeps=rel,only $BASE.dep)
+
+# bundledoc only includes the $BASE.bbl file derived from the .bib files.
+# But we'll be friendly and include the original .bib entries and .bst files as well:
+# this allows the recipient to modify the document and rerun bibtex, if desired.
+
+echo "Creating consolidated $BASE.bib"
+aux2bib $BASE.aux > /tmp/$BASE.bib.$$  # collects all the bib entries we actually used
+mv /tmp/$BASE.bib.$$ $BASE.bib         # move result back here (used a temp file since there may have been an original $BASE.bib that aux2bib reads from)
+
+# Remove unnecessary material from .tex files.
+
+for f in "${FILES[@]}"; do
+    if [[ "$f" = *.tex ]]; then
+	echo "Cleaning comments and notes from $f"
+	latex-clean $f "$@"           # make -clean.tex version
+	mv ${f%.tex}-clean.tex $f     # move it back over original
+
+	# fix up bibliography commands so that they'll use
+	# $BASE.bib instead, in case bibtex is rerun.
+	# TODO: Correct the directory in the rare case where the file $f
+	#       that contains the bib command is not in same dir as $ROOT.
+	perl -i -pe 's/\\(bibliography|addbibresource){.*?}/\\$1\{'$BASE'\}/g' $f
+    fi
+done
+
+# package the results into a zipfile in original directory, and publish it
+
+cd ..
+zip $DIRCLEAN.zip "${FILES[@]/#/$DIRCLEAN/}" $DIRCLEAN/$BASE.bib $(find $DIRCLEAN -name '*.bst')
+rm -rf $DIRCLEAN
+webify $DIRCLEAN.zip tmp
+echo "You may want to unzip $DIRCLEAN.zip and try running latexmk there."

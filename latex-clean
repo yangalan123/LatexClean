@@ -1,0 +1,67 @@
+#!/bin/bash
+# Remove comments and todonotes from a latex file, before uploading source to a server.
+#
+# Usage:
+#      latex-clean file.tex [--spaceafter] [latexcommands...]
+# Output:
+#      Creates file-clean.tex
+# Example:
+#      latex-clean file.tex cutforspace fixme notewho todowho jason emmy rms
+#
+#      This will pick up on LaTeX commands \fixme, \Fixme, \jason, \Jason, etc.
+#      It will delete each command name with its [optional args] and its {single obligatory arg}.
+#      In the case of a macro name ending in "who" (such as \notewho), it's assumed that there are
+#         {two}{obligatory args} (the first one names the author).
+#
+# The --spaceafter option says to also delete whitespace following each
+# command, as needed for the standard \todo macro from todonotes.
+# But often I define versions of the macros that suppress that space.
+#
+# The LaTeX command strings can be Emacs regexps, written as Emacs strings with escaping, 
+# so disjunction is written as "\\|" for example.
+
+# TODO: Should make --spaceafter apply to only the latex commands that
+#       FOLLOW --spaceafter on the command line (by running emacs twice, or two emacs commands),
+#       so that we can put other macro names like cutforspace BEFORE --spaceafter.
+#       Currently --spaceafter has to be the first argument.  
+#
+# TODO: Emacs deletion of todonotes will screw up if the todonote contents
+#       has unbalanced parens, such as a), b), c).  Also need to check escaping
+#       such as \}.  May be able to issue elisp commands to make it do the right
+#       thing?  Alternatively, use the solution from my mailmerge script to
+#       remove successively nested stuff.
+# 
+# TODO: For anonymization, should also remove the macro defs themselves, and also grep
+#       for the names at the end to see if they show up anywhere else in the file (to
+#       generate a warning).
+# 
+# TODO: In general, consider deleting all unused macros.
+#       https://tex.stackexchange.com/questions/52256/automatic-deletion-of-unused-macros
+# 
+# TODO: See also the TODO notes in latex-decomment, which is called by this script.
+#
+# TODO: Should possibly turn this into a filter.
+#
+# TODO: Beware of injection attacks.
+#
+
+join() {   # from https://stackoverflow.com/questions/1527049/join-elements-of-an-array/17841619#17841619
+    # $1 is return variable name
+    # $2 is sep
+    # $3... are the elements to join
+    local retname=$1 sep=$2 ret=$3
+    shift 3 || shift $(($#))
+    printf -v "$retname" "%s" "$ret${@/#/$sep}"
+}
+
+NAME=${1%.tex}; shift
+if [ "$1" == --spaceafter ]; then SPACEAFTER=t; shift; else SPACEAFTER=nil; fi
+
+latex-decomment $NAME.tex > $NAME-clean.tex
+if [ $# -gt 0 ]; then
+    # remove commands
+    join REGEX '\\|' "$@"
+    emacs $NAME-clean.tex --no-init-file --batch --eval '(let ((case-fold-search t)) (while (re-search-forward "\\\\\\('$REGEX'\\)\\([[{]\\)" nil t) (let ((num-args (+ 1 (if (string-suffix-p "who" (match-string 1)) 1 0) (if (string-equal "[" (match-string 2)) 1 0)))) (replace-match (match-string 2)) (backward-char) (kill-sexp num-args)) (if (and '$SPACEAFTER' (looking-at "[ 	]+")) (replace-match "")) (if (save-excursion (beginning-of-line) (looking-at "[ \t]*$")) (delete-blank-lines))) (save-buffer))'
+fi
+perl -i -pe 's/\015\012?/\012/g' $NAME-clean.tex   # convert any DOS newlines to Unix style
+perl -i -0777 -pe 's/\n(\s*\n)+/\n\n/g' $NAME-clean.tex     # collapse multiple blank lines
