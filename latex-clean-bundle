@@ -68,5 +68,5 @@ done
 cd ..
 zip $DIRCLEAN.zip "${FILES[@]/#/$DIRCLEAN/}" $DIRCLEAN/$BASE.bib $(find $DIRCLEAN -name '*.bst')
 rm -rf $DIRCLEAN
-webify $DIRCLEAN.zip tmp
+# webify $DIRCLEAN.zip tmp
 echo "You may want to unzip $DIRCLEAN.zip and try running latexmk there."
