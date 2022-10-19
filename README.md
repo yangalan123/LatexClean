@@ -19,6 +19,7 @@ sudo apt install emacs
 ```
 
 ## Running Instructions
+0. Note: the program here cannot be used in MacOS `zsh` as `readarray` is not supported. Also, if you want to run under Windows Subsystem Linux (WSL), note that current support of WSL to mobile devices is not sufficient so please move files to hard disks.
 1. We recommend put the program here under `$HOME/bin`, `/usr/local/bin` or some path you already add in `$PATH`.
 1. Put your `.tex` files and other project files (e.g., figures) in the same directory as `latex-clean-bundle`. 
 1. Remove `.git` directory if you `clone` this repo.
